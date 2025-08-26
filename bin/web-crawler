@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""
+Web Crawler
+
+A simple command line tool that takes in a base URL to crawl and prints the URL of the page and all the URLs it finds on that page. 
+It will only crawl the domain of the base URL and not crawl URLs pointing to other domains or subdomains.
+"""
+
+import os
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from web_crawler import crawl
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: ./bin/web-crawler [base_url]", file=sys.stderr)
+        sys.exit(1)
+
+    base_url = sys.argv[1]
+    
+    try:
+        crawl(base_url)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+
+if __name__ == "__main__":
+    main()
