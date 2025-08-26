@@ -1,37 +1,6 @@
 # web-crawler
 A CLI based tool for crawling webpages 
 
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd web-crawler
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-
-### Command Line Interface
-
-Run the following command at project root
-
-```bash
-./bin/web-crawler [base_url]
-```
-
-### Tests
-
-Run all tests using the following command at project root
-
-```bash
-python3 -m pytest test/ -v
-```
-
 ## Features
 
 This web crawler will take a base URL as input and recursively crawl all URLs that have the same domain as the base URL. It is designed to be fast, efficient and resilient.
