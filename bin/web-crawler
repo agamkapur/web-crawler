@@ -2,31 +2,50 @@
 """
 Web Crawler
 
-A simple command line tool that takes in a base URL to crawl and prints the URL of the page and all the URLs it finds on that page. 
-It will only crawl the domain of the base URL and not crawl URLs pointing to other domains or subdomains.
+A command line tool that recursively crawls a website starting from a base URL and prints all discovered URLs.
+It will only crawl URLs within the same domain as the base URL and maintains a list of visited URLs to avoid duplicates.
 """
 
 import os
 import sys
+import argparse
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from web_crawler import crawl
+from web_crawler import crawl, crawl_single_page
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: ./bin/web-crawler [base_url]", file=sys.stderr)
-        sys.exit(1)
-
-    base_url = sys.argv[1]
+    parser = argparse.ArgumentParser(
+        description="Recursively crawl a website and extract all URLs within the same domain",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ./bin/web-crawler https://example.com                    # Recursive crawl (unlimited depth)
+  ./bin/web-crawler https://example.com --depth 2          # Crawl up to depth 2
+  ./bin/web-crawler https://example.com --delay 0.5        # 0.5 second delay between requests
+  ./bin/web-crawler https://example.com --single           # Single page crawl (original behavior)
+        """
+    )
+    
+    parser.add_argument("base_url", help="The base URL to start crawling from")
+    parser.add_argument("--depth", "-d", type=int, help="Maximum depth for recursive crawling (default: unlimited)")
+    parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds (default: 1.0)")
+    parser.add_argument("--single", "-s", action="store_true", help="Single page crawl (non-recursive)")
+    
+    args = parser.parse_args()
     
     try:
-        crawl(base_url)
+        if args.single:
+            # Use the original single-page crawl function
+            crawl_single_page(args.base_url)
+        else:
+            # Use the new recursive crawl function
+            crawl(args.base_url, max_depth=args.depth, delay=args.delay)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    
+
 
 if __name__ == "__main__":
     main()
