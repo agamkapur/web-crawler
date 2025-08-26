@@ -6,7 +6,7 @@ import os
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from web_crawler import crawl
+from web_crawler import crawl, crawl_single_page
 
 
 class TestWebCrawler(unittest.TestCase):
@@ -31,8 +31,8 @@ class TestWebCrawler(unittest.TestCase):
     
     @patch('web_crawler.requests.get')
     @patch('web_crawler.verify')
-    def test_crawl_success(self, mock_verify, mock_get):
-        """Test successful crawling of a webpage"""
+    def test_crawl_single_page_success(self, mock_verify, mock_get):
+        """Test successful single page crawling (backward compatibility)"""
         # Mock the HTTP response
         mock_response = Mock()
         mock_response.text = self.sample_html
@@ -50,7 +50,7 @@ class TestWebCrawler(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
             output = captured_output.getvalue().strip().split('\n')
         finally:
             sys.stdout = sys.__stdout__
@@ -63,7 +63,7 @@ class TestWebCrawler(unittest.TestCase):
             "https://example.com/page3"
         ]
         
-        # Check that all expected URLs are present (may have additional verification messages)
+        # Check that all expected URLs are present
         for url in expected_urls:
             self.assertIn(url, output)
         
@@ -71,12 +71,201 @@ class TestWebCrawler(unittest.TestCase):
         self.assertNotIn("https://otherdomain.com/page4", output)
         self.assertNotIn("https://subdomain.example.com/page5", output)
     
-
+    @patch('web_crawler.requests.get')
+    @patch('web_crawler.verify')
+    def test_recursive_crawl_success(self, mock_verify, mock_get):
+        """Test successful recursive crawling"""
+        # Mock verify to always return True
+        mock_verify.return_value = True
+        
+        # Mock responses for different URLs
+        def mock_get_side_effect(url, **kwargs):
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            
+            if url == "https://example.com":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page1">Page 1</a>
+                        <a href="/page2">Page 2</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page1":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page3">Page 3</a>
+                        <a href="https://otherdomain.com/external">External</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page2":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page4">Page 4</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page3":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page1">Back to Page 1</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page4":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page5">Page 5</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page5":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page6">Page 6</a>
+                    </body>
+                </html>
+                """
+            else:
+                mock_response.text = "<html><body></body></html>"
+            
+            return mock_response
+        
+        mock_get.side_effect = mock_get_side_effect
+        
+        # Capture stdout to test output
+        from io import StringIO
+        import sys
+        
+        captured_output = StringIO()
+        sys.stdout = captured_output
+        
+        try:
+            crawl(self.base_url, max_depth=2, delay=0)  # No delay for testing
+            output = captured_output.getvalue()
+        finally:
+            sys.stdout = sys.__stdout__
+        
+        # Check that all expected URLs are found
+        expected_urls = [
+            "https://example.com",
+            "https://example.com/page1", 
+            "https://example.com/page2",
+            "https://example.com/page3",
+            "https://example.com/page4"
+        ]
+        
+        for url in expected_urls:
+            self.assertIn(url, output)
+        
+        # Check that external URLs are not included
+        self.assertNotIn("https://otherdomain.com/external", output)
+        
+        # Check that URLs beyond max depth are not crawled
+        self.assertNotIn("https://example.com/page5", output)
+        self.assertNotIn("https://example.com/page6", output)
+    
+    @patch('web_crawler.requests.get')
+    @patch('web_crawler.verify')
+    def test_recursive_crawl_visited_urls(self, mock_verify, mock_get):
+        """Test that visited URLs are not crawled again"""
+        # Mock verify to always return True
+        mock_verify.return_value = True
+        
+        # Mock responses with circular links
+        def mock_get_side_effect(url, **kwargs):
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            
+            if url == "https://example.com":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page1">Page 1</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page1":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page2">Page 2</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page2":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page1">Back to Page 1</a>
+                        <a href="/page3">Page 3</a>
+                    </body>
+                </html>
+                """
+            elif url == "https://example.com/page3":
+                mock_response.text = """
+                <html>
+                    <body>
+                        <a href="/page1">Back to Page 1</a>
+                    </body>
+                </html>
+                """
+            else:
+                mock_response.text = "<html><body></body></html>"
+            
+            return mock_response
+        
+        mock_get.side_effect = mock_get_side_effect
+        
+        # Capture stdout to test output
+        from io import StringIO
+        import sys
+        
+        captured_output = StringIO()
+        sys.stdout = captured_output
+        
+        try:
+            crawl(self.base_url, max_depth=3, delay=0)  # No delay for testing
+            output = captured_output.getvalue()
+        finally:
+            sys.stdout = sys.__stdout__
+        
+        # Check that all URLs are found
+        expected_urls = [
+            "https://example.com",
+            "https://example.com/page1",
+            "https://example.com/page2", 
+            "https://example.com/page3"
+        ]
+        
+        for url in expected_urls:
+            self.assertIn(url, output)
+        
+        # Count how many times each URL appears in the crawl output
+        # Each URL should only be crawled once
+        crawl_lines = [line for line in output.split('\n') if '[Depth' in line]
+        
+        # Count unique URLs crawled
+        crawled_urls = set()
+        for line in crawl_lines:
+            if 'Crawling:' in line:
+                url = line.split('Crawling: ')[1]
+                crawled_urls.add(url)
+        
+        # Should have exactly 4 unique URLs crawled
+        self.assertEqual(len(crawled_urls), 4)
     
     @patch('web_crawler.requests.get')
     @patch('web_crawler.verify')
     def test_crawl_with_relative_urls(self, mock_verify, mock_get):
-        """Test crawling with relative URLs"""
+        """Test crawling with relative URLs (single page)"""
         html_with_relative = """
         <html>
             <body>
@@ -103,7 +292,7 @@ class TestWebCrawler(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
             output = captured_output.getvalue().strip().split('\n')
         finally:
             sys.stdout = sys.__stdout__
@@ -120,23 +309,27 @@ class TestWebCrawler(unittest.TestCase):
             self.assertIn(url, output)
     
     @patch('web_crawler.requests.get')
-    def test_crawl_http_error(self, mock_get):
+    @patch('web_crawler.verify')
+    def test_crawl_http_error(self, mock_verify, mock_get):
         """Test handling of HTTP errors"""
         mock_get.side_effect = Exception("Connection failed")
+        mock_verify.return_value = True
         
         with self.assertRaises(Exception) as context:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
         
         self.assertIn("Error crawling", str(context.exception))
     
     @patch('web_crawler.requests.get')
-    def test_crawl_timeout(self, mock_get):
+    @patch('web_crawler.verify')
+    def test_crawl_timeout(self, mock_verify, mock_get):
         """Test handling of timeout errors"""
         from requests.exceptions import Timeout
         mock_get.side_effect = Timeout("Request timed out")
+        mock_verify.return_value = True
         
         with self.assertRaises(Exception) as context:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
         
         self.assertIn("Failed to fetch", str(context.exception))
     
@@ -159,7 +352,7 @@ class TestWebCrawler(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
             output = captured_output.getvalue().strip().split('\n')
         finally:
             sys.stdout = sys.__stdout__
@@ -195,7 +388,7 @@ class TestWebCrawler(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
             output = captured_output.getvalue().strip().split('\n')
         finally:
             sys.stdout = sys.__stdout__
@@ -238,7 +431,7 @@ class TestWebCrawler(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url)
+            crawl_single_page(self.base_url)
             output = captured_output.getvalue().strip().split('\n')
         finally:
             sys.stdout = sys.__stdout__
