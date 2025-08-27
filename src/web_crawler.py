@@ -21,7 +21,6 @@ class RedirectLoopError(Exception):
 @dataclass
 class CrawlConfig:
     """Configuration for web crawling."""
-    max_depth: Optional[int] = None
     delay: float = 0.1
     max_redirects: int = 10
     max_concurrent: int = 10
@@ -311,7 +310,7 @@ class WebCrawler:
             
             logger.info(f"Starting asynchronous recursive crawl of {base_url}")
             logger.info(f"Domain: {base_domain}")
-            logger.info(f"Max depth: {self.config.max_depth if self.config.max_depth else 'unlimited'}")
+            logger.info(f"Max depth: unlimited")
             logger.info(f"Delay between requests: {self.config.delay}s")
             logger.info(f"Max redirects per URL: {self.config.max_redirects}")
             logger.info(f"Max concurrent requests: {self.config.max_concurrent}")
@@ -339,9 +338,7 @@ class WebCrawler:
                         if current_url in self.visited_urls:
                             continue
                         
-                        # Check depth limit
-                        if self.config.max_depth is not None and current_depth > self.config.max_depth:
-                            continue
+
                         
                         # Skip if not same domain
                         if urlparse(current_url).netloc != base_domain:
@@ -403,14 +400,13 @@ class WebCrawler:
 
 
 # Backward compatibility functions
-async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1, 
+async def crawl_async(base_url: str, delay: float = 0.1, 
                      max_redirects: int = 10, max_concurrent: int = 10) -> Set[str]:
     """
     Backward compatibility function for async crawling.
     
     Args:
         base_url: The URL of the webpage to start crawling from
-        max_depth: Maximum depth for recursive crawling. None for unlimited.
         delay: Delay between requests in seconds
         max_redirects: Maximum number of redirects to follow per URL
         max_concurrent: Maximum number of concurrent requests
@@ -419,7 +415,6 @@ async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: flo
         Set of all discovered URLs
     """
     config = CrawlConfig(
-        max_depth=max_depth,
         delay=delay,
         max_redirects=max_redirects,
         max_concurrent=max_concurrent
@@ -430,14 +425,13 @@ async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: flo
     return result.urls
 
 
-def crawl(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1, 
+def crawl(base_url: str, delay: float = 0.1, 
           max_redirects: int = 10, max_concurrent: int = 10) -> None:
     """
     Backward compatibility function for synchronous crawling.
     
     Args:
         base_url: The URL of the webpage to start crawling from
-        max_depth: Maximum depth for recursive crawling. None for unlimited.
         delay: Delay between requests in seconds
         max_redirects: Maximum number of redirects to follow per URL
         max_concurrent: Maximum number of concurrent requests
@@ -446,7 +440,7 @@ def crawl(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1,
         None: Prints all found URLs to stdout
     """
     try:
-        asyncio.run(crawl_async(base_url, max_depth, delay, max_redirects, max_concurrent))
+        asyncio.run(crawl_async(base_url, delay, max_redirects, max_concurrent))
     except Exception as e:
         raise Exception(f"Error during recursive crawling: {e}")
 

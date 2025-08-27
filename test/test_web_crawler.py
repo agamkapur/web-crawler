@@ -82,7 +82,6 @@ class TestCrawlConfig(unittest.TestCase):
         """Test default configuration values"""
         config = CrawlConfig()
         
-        self.assertIsNone(config.max_depth)
         self.assertEqual(config.delay, 0.1)
         self.assertEqual(config.max_redirects, 10)
         self.assertEqual(config.max_concurrent, 10)
@@ -92,7 +91,6 @@ class TestCrawlConfig(unittest.TestCase):
     def test_custom_config(self):
         """Test custom configuration values"""
         config = CrawlConfig(
-            max_depth=5,
             delay=0.5,
             max_redirects=5,
             max_concurrent=20,
@@ -100,7 +98,6 @@ class TestCrawlConfig(unittest.TestCase):
             user_agent="CustomBot/1.0"
         )
         
-        self.assertEqual(config.max_depth, 5)
         self.assertEqual(config.delay, 0.5)
         self.assertEqual(config.max_redirects, 5)
         self.assertEqual(config.max_concurrent, 20)
@@ -147,7 +144,7 @@ class TestWebCrawler(unittest.TestCase):
             </body>
         </html>
         """
-        self.config = CrawlConfig(max_depth=1, delay=0, max_concurrent=1)
+        self.config = CrawlConfig(delay=0, max_concurrent=1)
         self.crawler = WebCrawler(self.config)
     
     def test_web_crawler_initialization(self):
@@ -345,7 +342,7 @@ class TestBackwardCompatibility(unittest.TestCase):
         
         mock_session.get.return_value.__aenter__.return_value = mock_response
         
-        urls = await crawl_async(self.base_url, max_depth=1, delay=0, max_concurrent=1)
+        urls = await crawl_async(self.base_url, delay=0, max_concurrent=1)
         
         self.assertIsInstance(urls, set)
         self.assertIn(self.base_url, urls)
@@ -380,7 +377,7 @@ class TestBackwardCompatibility(unittest.TestCase):
         sys.stdout = captured_output
         
         try:
-            crawl(self.base_url, max_depth=1, delay=0, max_concurrent=1)
+            crawl(self.base_url, delay=0, max_concurrent=1)
             output = captured_output.getvalue()
         finally:
             sys.stdout = original_stdout
