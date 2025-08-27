@@ -3,6 +3,7 @@ from unittest.mock import patch, Mock, AsyncMock
 import sys
 import os
 import pytest
+import datetime
 
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -203,17 +204,30 @@ class TestCrawlResult(unittest.TestCase):
     def test_crawl_result(self):
         """Test CrawlResult creation and properties"""
         urls = {"https://example.com", "https://example.com/page1"}
+        error_urls = {"https://example.com/error"}
+        redirect_urls = {"https://example.com/redirect"}
+        start_time = datetime.datetime.now()
+        end_time = datetime.datetime.now()
+        
         result = CrawlResult(
             urls=urls,
             visited_count=2,
             error_count=0,
-            redirect_count=1
+            redirect_count=1,
+            start_time=start_time,
+            end_time=end_time,
+            error_urls=error_urls,
+            redirect_urls=redirect_urls
         )
         
         self.assertEqual(result.urls, urls)
         self.assertEqual(result.visited_count, 2)
         self.assertEqual(result.error_count, 0)
         self.assertEqual(result.redirect_count, 1)
+        self.assertEqual(result.start_time, start_time)
+        self.assertEqual(result.end_time, end_time)
+        self.assertEqual(result.error_urls, error_urls)
+        self.assertEqual(result.redirect_urls, redirect_urls)
 
 
 class TestWebCrawler(unittest.TestCase):
@@ -249,6 +263,8 @@ class TestWebCrawler(unittest.TestCase):
         self.assertEqual(len(crawler.all_found_urls), 0)
         self.assertEqual(crawler.error_count, 0)
         self.assertEqual(crawler.redirect_count, 0)
+        self.assertEqual(len(crawler.error_urls), 0)
+        self.assertEqual(len(crawler.redirect_urls), 0)
     
     def test_get_headers(self):
         """Test header generation"""

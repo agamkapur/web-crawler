@@ -9,6 +9,8 @@ from collections import deque
 from typing import Set, List, Optional, Dict, Any
 import logging
 from dataclasses import dataclass
+import os
+import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +37,10 @@ class CrawlResult:
     visited_count: int
     error_count: int
     redirect_count: int
+    start_time: datetime.datetime
+    end_time: datetime.datetime
+    error_urls: Set[str]
+    redirect_urls: Set[str]
 
 
 
@@ -60,6 +66,8 @@ class WebCrawler:
         self.all_found_urls: Set[str] = set()
         self.error_count = 0
         self.redirect_count = 0
+        self.error_urls: Set[str] = set()
+        self.redirect_urls: Set[str] = set()
         
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for HTTP requests."""
@@ -98,9 +106,11 @@ class WebCrawler:
                     session, url, self.config
                 )
                 
-                # Update redirect count
+                # Update redirect count and track redirect URLs
                 if len(redirect_chain) > 1:
                     self.redirect_count += 1
+                    # Add the original URL to redirect URLs set
+                    self.redirect_urls.add(url)
                 
                 # If we ended up at a different URL, check if it's in the same domain
                 if final_url != url:
@@ -121,6 +131,7 @@ class WebCrawler:
                 if response_data is None:
                     logger.warning(f"  Failed to get response for {url}")
                     self.error_count += 1
+                    self.error_urls.add(url)
                     return discovered_urls
                 
                 # Unpack response data
@@ -130,15 +141,18 @@ class WebCrawler:
                 if response.status >= 400:
                     logger.warning(f"  HTTP {response.status} error for {url}")
                     self.error_count += 1
+                    self.error_urls.add(url)
                     return discovered_urls
                 
             except RedirectLoopError as e:
                 logger.warning(f"  Redirect loop detected: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             except Exception as e:
                 logger.warning(f"  Failed to follow redirects: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             
             # Parse the HTML content
@@ -147,6 +161,7 @@ class WebCrawler:
             except Exception as e:
                 logger.warning(f"  Failed to parse HTML for {url}: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             
             # Find all anchor tags with href attributes
@@ -172,6 +187,7 @@ class WebCrawler:
         except Exception as e:
             logger.error(f"Error crawling {url}: {e}")
             self.error_count += 1
+            self.error_urls.add(url)
             return discovered_urls
 
     async def crawl(self, base_url: str) -> CrawlResult:
@@ -195,11 +211,16 @@ class WebCrawler:
             # Normalize the base URL
             normalized_base_url = self.url_normalizer.normalize_url(base_url)
             
+            # Record start time
+            start_time = datetime.datetime.now()
+            
             # Initialize tracking variables
             self.visited_urls.clear()
             self.all_found_urls.clear()
             self.error_count = 0
             self.redirect_count = 0
+            self.error_urls.clear()
+            self.redirect_urls.clear()
             
             urls_to_visit = deque([normalized_base_url])  # Just URLs, no depth tracking
             base_domain = urlparse(normalized_base_url).netloc
@@ -265,10 +286,12 @@ class WebCrawler:
                             else:
                                 logger.error(f"Error processing {url}: {results[i]}")
                                 self.error_count += 1
+                                self.error_urls.add(url)
                                 
                         except Exception as e:
                             logger.error(f"Error processing results for {url}: {e}")
                             self.error_count += 1
+                            self.error_urls.add(url)
             
             # Print final results
             logger.info("-" * 50)
@@ -284,15 +307,81 @@ class WebCrawler:
             for url in sorted(self.all_found_urls):
                 print(url)
             
+            # Create crawl report
+            self._create_crawl_report(base_url, start_time, datetime.datetime.now())
+            
             return CrawlResult(
                 urls=self.all_found_urls,
                 visited_count=len(self.visited_urls),
                 error_count=self.error_count,
-                redirect_count=self.redirect_count
+                redirect_count=self.redirect_count,
+                start_time=start_time,
+                end_time=datetime.datetime.now(),
+                error_urls=self.error_urls,
+                redirect_urls=self.redirect_urls
             )
                 
         except Exception as e:
             raise Exception(f"Error during asynchronous recursive crawling: {e}")
+
+    def _create_crawl_report(self, base_url: str, start_time: datetime.datetime, end_time: datetime.datetime) -> None:
+        """
+        Create a detailed crawl report in a timestamped folder.
+        
+        Args:
+            base_url: The base URL that was crawled
+            start_time: When the crawl started
+            end_time: When the crawl ended
+        """
+        try:
+            # Create crawling_runs directory if it doesn't exist
+            runs_dir = "crawling_runs"
+            if not os.path.exists(runs_dir):
+                os.makedirs(runs_dir)
+            
+            # Create timestamped folder name
+            timestamp = start_time.strftime("%Y-%m-%d_%H-%M-%S")
+            run_folder = os.path.join(runs_dir, timestamp)
+            os.makedirs(run_folder, exist_ok=True)
+            
+            # Calculate total time taken
+            total_time = end_time - start_time
+            
+            # Create run_details.txt
+            run_details_path = os.path.join(run_folder, "run_details.txt")
+            with open(run_details_path, 'w') as f:
+                f.write(f"Base URL: {base_url}\n")
+                f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"End Time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Total Time: {total_time}\n")
+                f.write(f"URLs Found/Visited: {len(self.all_found_urls)}\n")
+                f.write(f"Error URLs: {len(self.error_urls)}\n")
+                f.write(f"Redirect URLs: {len(self.redirect_urls)}\n")
+                f.write(f"Total Errors: {self.error_count}\n")
+                f.write(f"Total Redirects: {self.redirect_count}\n")
+            
+            # Create all_found_urls.txt
+            found_urls_path = os.path.join(run_folder, "all_found_urls.txt")
+            with open(found_urls_path, 'w') as f:
+                for url in sorted(self.all_found_urls):
+                    f.write(f"{url}\n")
+            
+            # Create all_error_urls.txt
+            error_urls_path = os.path.join(run_folder, "all_error_urls.txt")
+            with open(error_urls_path, 'w') as f:
+                for url in sorted(self.error_urls):
+                    f.write(f"{url}\n")
+            
+            # Create all_redirect_urls.txt
+            redirect_urls_path = os.path.join(run_folder, "all_redirect_urls.txt")
+            with open(redirect_urls_path, 'w') as f:
+                for url in sorted(self.redirect_urls):
+                    f.write(f"{url}\n")
+            
+            logger.info(f"Crawl report created in: {run_folder}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create crawl report: {e}")
 
 
 # Backward compatibility functions
