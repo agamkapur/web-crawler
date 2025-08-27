@@ -1,9 +1,0 @@
-Base URL: https://example.com
-Start Time: 2025-08-28 00:30:38
-End Time: 2025-08-28 00:30:38
-Total Time: 0:00:00.000393
-URLs Found/Visited: 1
-Error URLs: 1
-Redirect URLs: 0
-Total Errors: 1
-Total Redirects: 0

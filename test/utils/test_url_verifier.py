@@ -9,14 +9,14 @@ from urllib.error import HTTPError, URLError
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.verification_utils import (
+from utils.url_verifier import (
     syntactic_checks, verify, semantic_checks, protocol_checks, 
     operational_checks, security_checks, is_valid_domain, 
     is_valid_ip, is_valid_path_query
 )
 
 
-class TestVerificationUtils(unittest.TestCase):
+class TestURLVerifier(unittest.TestCase):
     
     def setUp(self):
         self.base_url = "https://example.com"
@@ -263,7 +263,7 @@ class TestVerificationUtils(unittest.TestCase):
 
     # ==================== SEMANTIC CHECKS TESTS ====================
     
-    @patch('utils.verification_utils.socket.gethostbyname')
+    @patch('utils.url_verifier.socket.gethostbyname')
     def test_semantic_checks_valid_domain(self, mock_gethostbyname):
         """Test semantic_checks with valid domain"""
         mock_gethostbyname.return_value = "93.184.216.34"
@@ -272,7 +272,7 @@ class TestVerificationUtils(unittest.TestCase):
         self.assertTrue(result)
         mock_gethostbyname.assert_called_once_with("example.com")
     
-    @patch('utils.verification_utils.socket.gethostbyname')
+    @patch('utils.url_verifier.socket.gethostbyname')
     def test_semantic_checks_dns_failure(self, mock_gethostbyname):
         """Test semantic_checks with DNS resolution failure"""
         mock_gethostbyname.side_effect = socket.gaierror("Name or service not known")
@@ -310,7 +310,7 @@ class TestVerificationUtils(unittest.TestCase):
 
     # ==================== PROTOCOL CHECKS TESTS ====================
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_protocol_checks_success(self, mock_urlopen):
         """Test protocol_checks with successful response"""
         mock_response = Mock()
@@ -321,7 +321,7 @@ class TestVerificationUtils(unittest.TestCase):
         result = protocol_checks("https://example.com")
         self.assertTrue(result)
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_protocol_checks_http_error(self, mock_urlopen):
         """Test protocol_checks with HTTP error"""
         mock_urlopen.side_effect = HTTPError("https://example.com", 404, "Not Found", {}, None)
@@ -329,7 +329,7 @@ class TestVerificationUtils(unittest.TestCase):
         result = protocol_checks("https://example.com")
         self.assertFalse(result)
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_protocol_checks_url_error(self, mock_urlopen):
         """Test protocol_checks with URL error"""
         mock_urlopen.side_effect = URLError("Connection refused")
@@ -337,7 +337,7 @@ class TestVerificationUtils(unittest.TestCase):
         result = protocol_checks("https://example.com")
         self.assertFalse(result)
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_protocol_checks_wrong_content_type(self, mock_urlopen):
         """Test protocol_checks with wrong content type"""
         mock_response = Mock()
@@ -346,11 +346,11 @@ class TestVerificationUtils(unittest.TestCase):
         mock_urlopen.return_value.__enter__.return_value = mock_response
         
         result = protocol_checks("https://example.com")
-        self.assertTrue(result)  # Should still pass but with warning
+        self.assertFalse(result)  # Should fail due to unsupported content type
 
     # ==================== OPERATIONAL CHECKS TESTS ====================
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_operational_checks_success(self, mock_urlopen):
         """Test operational_checks with successful response"""
         mock_response = Mock()
@@ -361,7 +361,7 @@ class TestVerificationUtils(unittest.TestCase):
         result = operational_checks("https://example.com")
         self.assertTrue(result)
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_operational_checks_rate_limiting(self, mock_urlopen):
         """Test operational_checks with rate limiting"""
         mock_response = Mock()
@@ -370,9 +370,9 @@ class TestVerificationUtils(unittest.TestCase):
         mock_urlopen.return_value.__enter__.return_value = mock_response
         
         result = operational_checks("https://example.com")
-        self.assertTrue(result)  # Should pass but with warning
+        self.assertFalse(result)  # Should fail due to rate limiting
     
-    @patch('utils.verification_utils.urlopen')
+    @patch('utils.url_verifier.urlopen')
     def test_operational_checks_forbidden(self, mock_urlopen):
         """Test operational_checks with 403 Forbidden"""
         mock_response = Mock()
@@ -381,7 +381,7 @@ class TestVerificationUtils(unittest.TestCase):
         mock_urlopen.return_value.__enter__.return_value = mock_response
         
         result = operational_checks("https://example.com")
-        self.assertTrue(result)  # Should pass but with warning
+        self.assertFalse(result)  # Should fail due to 403 Forbidden
 
     # ==================== SECURITY CHECKS TESTS ====================
     
@@ -428,11 +428,11 @@ class TestVerificationUtils(unittest.TestCase):
 
     # ==================== VERIFY FUNCTION TESTS ====================
     
-    @patch('utils.verification_utils.security_checks')
-    @patch('utils.verification_utils.operational_checks')
-    @patch('utils.verification_utils.protocol_checks')
-    @patch('utils.verification_utils.semantic_checks')
-    @patch('utils.verification_utils.syntactic_checks')
+    @patch('utils.url_verifier.security_checks')
+    @patch('utils.url_verifier.operational_checks')
+    @patch('utils.url_verifier.protocol_checks')
+    @patch('utils.url_verifier.semantic_checks')
+    @patch('utils.url_verifier.syntactic_checks')
     def test_verify_all_checks_pass(self, mock_syntactic, mock_semantic, mock_protocol, mock_operational, mock_security):
         """Test verify function when all checks pass"""
         mock_syntactic.return_value = True
@@ -451,11 +451,11 @@ class TestVerificationUtils(unittest.TestCase):
         mock_operational.assert_called_once()
         mock_security.assert_called_once()
     
-    @patch('utils.verification_utils.security_checks')
-    @patch('utils.verification_utils.operational_checks')
-    @patch('utils.verification_utils.protocol_checks')
-    @patch('utils.verification_utils.semantic_checks')
-    @patch('utils.verification_utils.syntactic_checks')
+    @patch('utils.url_verifier.security_checks')
+    @patch('utils.url_verifier.operational_checks')
+    @patch('utils.url_verifier.protocol_checks')
+    @patch('utils.url_verifier.semantic_checks')
+    @patch('utils.url_verifier.syntactic_checks')
     def test_verify_syntactic_fails(self, mock_syntactic, mock_semantic, mock_protocol, mock_operational, mock_security):
         """Test verify function when syntactic checks fail"""
         mock_syntactic.return_value = False
@@ -470,11 +470,11 @@ class TestVerificationUtils(unittest.TestCase):
         mock_operational.assert_not_called()
         mock_security.assert_not_called()
     
-    @patch('utils.verification_utils.security_checks')
-    @patch('utils.verification_utils.operational_checks')
-    @patch('utils.verification_utils.protocol_checks')
-    @patch('utils.verification_utils.semantic_checks')
-    @patch('utils.verification_utils.syntactic_checks')
+    @patch('utils.url_verifier.security_checks')
+    @patch('utils.url_verifier.operational_checks')
+    @patch('utils.url_verifier.protocol_checks')
+    @patch('utils.url_verifier.semantic_checks')
+    @patch('utils.url_verifier.syntactic_checks')
     def test_verify_semantic_fails(self, mock_syntactic, mock_semantic, mock_protocol, mock_operational, mock_security):
         """Test verify function when semantic checks fail"""
         mock_syntactic.return_value = True
@@ -492,7 +492,7 @@ class TestVerificationUtils(unittest.TestCase):
     
     def test_verify_exception_handling(self):
         """Test verify function exception handling"""
-        with patch('utils.verification_utils.syntactic_checks', side_effect=Exception("Test exception")):
+        with patch('utils.url_verifier.syntactic_checks', side_effect=Exception("Test exception")):
             result = verify("https://example.com")
             self.assertFalse(result)
 

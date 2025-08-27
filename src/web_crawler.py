@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from utils.verification_utils import verify
+from utils.url_verifier import verify
 from utils.url_normalizer import URLNormalizer
 from utils.redirect_handler import RedirectHandler, RedirectLoopError
 from utils.report_generator import CrawlReportGenerator
