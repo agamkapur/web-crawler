@@ -34,17 +34,21 @@ The web crawler can be used as a CLI tool with various options:
 # Crawl with maximum redirect limit
 ./bin/web-crawler https://example.com --max-redirects 5
 
+# Crawl with maximum concurrent requests
+./bin/web-crawler https://example.com --max-concurrent 20
+
 # Single page crawl (original behavior)
 ./bin/web-crawler https://example.com --single
 
 # Combine options
-./bin/web-crawler https://example.com --depth 3 --delay 1.5 --max-redirects 8
+./bin/web-crawler https://example.com --depth 3 --delay 1.5 --max-redirects 8 --max-concurrent 15
 ```
 
 #### CLI Options:
 - `--depth, -d`: Maximum depth for recursive crawling (default: unlimited)
-- `--delay`: Delay between requests in seconds (default: 1.0)
+- `--delay`: Delay between requests in seconds (default: 0.1)
 - `--max-redirects`: Maximum redirects to follow per URL (default: 10)
+- `--max-concurrent`: Maximum concurrent requests (default: 10)
 - `--single, -s`: Single page crawl (non-recursive, original behavior)
 - `--help, -h`: Show help message
 
@@ -70,6 +74,7 @@ python3 -m pytest test/utils/test_verification_utils.py -v
 
 #### Web Crawler Tests (18 tests)
 - ✅ **Single Page Crawling**: Basic crawling functionality (backward compatibility)
+- ✅ **Asynchronous Crawling**: Concurrent request handling and performance optimization
 - ✅ **Recursive Crawling**: Multi-level URL discovery with depth control
 - ✅ **Visited URL Tracking**: Duplicate URL prevention and infinite loop avoidance
 - ✅ **Redirect Loop Detection**: Infinite, reverse, and circular redirect loop detection
@@ -95,10 +100,12 @@ python3 -m pytest test/utils/test_verification_utils.py -v
 ## Features
 
 ### Core Functionality
+- **Asynchronous Crawling**: Concurrent request handling for improved performance
 - **Recursive Crawling**: Recursively discovers all URLs within the same domain
 - **Visited URL Tracking**: Maintains a list of visited URLs to avoid duplicates and infinite loops
 - **Depth Control**: Configurable maximum depth for recursive crawling
 - **Polite Crawling**: Configurable delays between requests to be respectful to servers
+- **Concurrent Request Control**: Configurable maximum concurrent requests
 - **Redirect Protection**: Comprehensive protection against redirect loops (infinite, reverse, circular)
 - **Single Domain Crawling**: Only crawls URLs from the same domain as the base URL
 - **URL Validation**: Comprehensive validation of URLs before processing
@@ -149,11 +156,12 @@ The tool provides detailed crawling progress and final results:
 
 #### Progress Output:
 ```
-Starting recursive crawl of https://example.com
+Starting asynchronous recursive crawl of https://example.com
 Domain: example.com
 Max depth: 2
-Delay between requests: 1.0s
+Delay between requests: 0.1s
 Max redirects per URL: 10
+Max concurrent requests: 10
 --------------------------------------------------
 [Depth 0] Crawling: https://example.com
   Redirect 1: https://example.com -> https://example.com/home
@@ -181,7 +189,7 @@ You can also use the crawler programmatically:
 from src.web_crawler import crawl, crawl_single_page
 
 # Recursive crawling with options
-crawl("https://example.com", max_depth=3, delay=1.0, max_redirects=10)
+crawl("https://example.com", max_depth=3, delay=0.1, max_redirects=10, max_concurrent=10)
 
 # Single page crawling (original behavior)
 crawl_single_page("https://example.com", max_redirects=10)
@@ -207,11 +215,13 @@ web-crawler/
 
 ## Performance Considerations
 
+- **Asynchronous Processing**: Concurrent HTTP requests for significantly improved performance
 - **Efficient Parsing**: Uses BeautifulSoup for fast HTML parsing
 - **Domain Filtering**: Early filtering to reduce processing overhead
 - **URL Deduplication**: Uses sets to avoid duplicate processing and infinite loops
 - **Breadth-First Crawling**: Uses deque for efficient URL queue management
 - **Visited URL Tracking**: Prevents redundant crawling of already visited URLs
+- **Concurrent Request Control**: Configurable semaphore limits to prevent overwhelming servers
 - **Redirect Loop Protection**: Prevents infinite redirect loops and wasted resources
 - **Configurable Delays**: Polite crawling with adjustable delays between requests
 - **Depth Control**: Prevents excessive crawling with configurable depth limits
@@ -219,7 +229,6 @@ web-crawler/
 
 ## Future Enhancements
 
-- **Asynchronous Crawling**: Concurrent request handling for improved performance
 - **URL Storage**: Persistent storage of crawled URLs and crawl history
 - **Robots.txt Compliance**: Full robots.txt parsing and compliance
 - **Sitemap Support**: XML sitemap parsing for efficient discovery
@@ -227,6 +236,8 @@ web-crawler/
 - **Resume Capability**: Ability to resume interrupted crawls
 - **Custom Filters**: Advanced URL filtering and content analysis
 - **Export Formats**: Support for various output formats (JSON, CSV, XML)
+- **Rate Limiting**: Advanced rate limiting and backoff strategies
+- **Distributed Crawling**: Multi-process and distributed crawling capabilities
 
 ## Contributing
 
