@@ -1,6 +1,34 @@
 # Web Crawler
 
-A command-line tool for recursively crawling websites and extracting URLs. This web crawler takes a base URL as input and recursively discovers all URLs within the same domain, maintaining a list of visited URLs to avoid duplicates.
+A modern, asynchronous web crawler with comprehensive URL normalization, redirect handling, and detailed crawl reporting. This web crawler takes a base URL as input and recursively discovers all URLs within the same domain, with advanced features for robust and efficient crawling.
+
+## Features
+
+### Core Functionality
+- **Asynchronous Crawling**: High-performance concurrent request handling
+- **URL Normalization**: Comprehensive URL standardization to prevent duplicate crawling
+- **Redirect Loop Detection**: Advanced protection against infinite, reverse, and circular redirect loops
+- **Crawl Reports**: Automatic generation of detailed crawl reports with timestamps
+- **Domain Restriction**: Only crawls URLs from the same domain as the base URL
+- **Error Tracking**: Comprehensive tracking of error URLs and redirect URLs
+- **Unlimited Depth**: Recursively discovers all URLs without depth limitations
+- **Polite Crawling**: Configurable delays between requests to be respectful to servers
+
+### URL Normalization
+The crawler includes sophisticated URL normalization that:
+- Removes trailing slashes from paths (except for root)
+- Converts scheme and hostname to lowercase
+- Removes default ports (80 for HTTP, 443 for HTTPS)
+- Removes URL fragments (#section)
+- Sorts query parameters alphabetically
+- Removes duplicate query parameters (keeps last occurrence)
+
+### Crawl Reports
+Each crawl automatically generates a timestamped report folder containing:
+- **`run_details.txt`**: Base URL, start/end times, total duration, URL counts, error counts, redirect counts
+- **`all_found_urls.txt`**: Complete list of all discovered URLs
+- **`all_error_urls.txt`**: URLs that encountered errors during crawling
+- **`all_redirect_urls.txt`**: URLs that issued redirects during crawling
 
 ## Installation
 
@@ -19,14 +47,9 @@ pip install -r requirements.txt
 
 ### Command Line Interface
 
-The web crawler can be used as a CLI tool with various options:
-
 ```bash
 # Basic recursive crawl (unlimited depth)
 ./bin/web-crawler https://example.com
-
-# Crawl with depth limit
-./bin/web-crawler https://example.com --depth 2
 
 # Crawl with custom delay between requests
 ./bin/web-crawler https://example.com --delay 0.5
@@ -37,24 +60,53 @@ The web crawler can be used as a CLI tool with various options:
 # Crawl with maximum concurrent requests
 ./bin/web-crawler https://example.com --max-concurrent 20
 
-# Single page crawl (original behavior)
-./bin/web-crawler https://example.com --single
-
 # Combine options
-./bin/web-crawler https://example.com --depth 3 --delay 1.5 --max-redirects 8 --max-concurrent 15
+./bin/web-crawler https://example.com --delay 1.5 --max-redirects 8 --max-concurrent 15
 ```
 
 #### CLI Options:
-- `--depth, -d`: Maximum depth for recursive crawling (default: unlimited)
 - `--delay`: Delay between requests in seconds (default: 0.1)
 - `--max-redirects`: Maximum redirects to follow per URL (default: 10)
 - `--max-concurrent`: Maximum concurrent requests (default: 10)
-- `--single, -s`: Single page crawl (non-recursive, original behavior)
 - `--help, -h`: Show help message
 
-## Testing
+### Programmatic Usage
 
-The project includes comprehensive test coverage:
+```python
+from src.web_crawler import WebCrawler, CrawlConfig, crawl, crawl_async
+
+# Using the WebCrawler class
+config = CrawlConfig(
+    delay=0.1,
+    max_redirects=10,
+    max_concurrent=10,
+    timeout=10
+)
+crawler = WebCrawler(config)
+result = await crawler.crawl("https://example.com")
+
+# Using backward compatibility functions
+crawl("https://example.com", delay=0.1, max_redirects=10, max_concurrent=10)
+urls = await crawl_async("https://example.com", delay=0.1, max_redirects=10, max_concurrent=10)
+```
+
+## Architecture
+
+### Class-Based Design
+The crawler uses a modern, class-based architecture:
+
+- **`WebCrawler`**: Main crawler class with comprehensive crawling logic
+- **`CrawlConfig`**: Configuration dataclass for crawl settings
+- **`CrawlResult`**: Result dataclass with detailed crawl statistics
+- **`URLNormalizer`**: Utility class for URL normalization
+- **`RedirectHandler`**: Utility class for redirect handling and loop detection
+
+### Utility Modules
+- **`src/utils/url_normalizer.py`**: URL normalization functionality
+- **`src/utils/redirect_handler.py`**: Redirect handling and loop detection
+- **`src/utils/verification_utils.py`**: URL verification system
+
+## Testing
 
 ### Run All Tests
 ```bash
@@ -63,181 +115,98 @@ python3 -m pytest test/ -v
 
 ### Run Specific Test Suites
 ```bash
-# Web crawler tests only
+# All web crawler tests
 python3 -m pytest test/test_web_crawler.py -v
 
-# Verification utils tests only
+# URL normalizer tests
+python3 -m pytest test/test_web_crawler.py::TestURLNormalizer -v
+
+# Redirect handler tests
+python3 -m pytest test/test_web_crawler.py::TestRedirectHandler -v
+
+# Verification utils tests
 python3 -m pytest test/utils/test_verification_utils.py -v
 ```
 
 ### Test Coverage
 
-#### Web Crawler Tests (18 tests)
-- ✅ **Single Page Crawling**: Basic crawling functionality (backward compatibility)
-- ✅ **Asynchronous Crawling**: Concurrent request handling and performance optimization
-- ✅ **Recursive Crawling**: Multi-level URL discovery with depth control
-- ✅ **Visited URL Tracking**: Duplicate URL prevention and infinite loop avoidance
-- ✅ **Redirect Loop Detection**: Infinite, reverse, and circular redirect loop detection
-- ✅ **Redirect Following**: Safe redirect following with loop protection
-- ✅ **Relative URL Handling**: Conversion of relative URLs to absolute URLs
-- ✅ **Query Parameter Handling**: URLs with query parameters and fragments
-- ✅ **Fragment Handling**: URLs with hash fragments
-- ✅ **Empty Page Crawling**: Handling of pages with no links
-- ✅ **HTTP Error Handling**: Network errors and connection failures
-- ✅ **Timeout Error Handling**: Request timeout scenarios
+#### Web Crawler Tests (23 tests)
+- ✅ **URL Normalization**: Comprehensive URL standardization testing
+- ✅ **Redirect Handling**: Loop detection and safe redirect following
+- ✅ **Class Architecture**: WebCrawler, CrawlConfig, CrawlResult testing
+- ✅ **Asynchronous Crawling**: Concurrent request handling
+- ✅ **Error Handling**: Network errors, HTTP errors, parsing failures
+- ✅ **Crawl Reports**: Report generation and file creation
+- ✅ **Backward Compatibility**: Legacy function support
 
 #### Verification Utils Tests (35 tests)
-- ✅ **Syntactic Checks**: URL format validation, scheme validation, port validation
-- ✅ **Domain Validation**: Valid/invalid domain names, IP addresses, edge cases
-- ✅ **IP Address Validation**: IPv4/IPv6 validation, invalid IP detection
-- ✅ **Path/Query Validation**: Dangerous character detection, injection prevention
-- ✅ **Semantic Checks**: DNS resolution, reserved domains, private IPs
-- ✅ **Protocol Checks**: HTTP responses, content types, network errors
+- ✅ **Syntactic Checks**: URL format validation, scheme validation
+- ✅ **Domain Validation**: Valid/invalid domain names, IP addresses
+- ✅ **Security Checks**: SSRF protection, dangerous protocols
 - ✅ **Operational Checks**: robots.txt, rate limiting, crawler blocking
-- ✅ **Security Checks**: SSRF protection, dangerous protocols, input sanitization
-- ✅ **Integration Tests**: Full verification pipeline testing
-
-## Features
-
-### Core Functionality
-- **Asynchronous Crawling**: Concurrent request handling for improved performance
-- **Recursive Crawling**: Recursively discovers all URLs within the same domain
-- **Visited URL Tracking**: Maintains a list of visited URLs to avoid duplicates and infinite loops
-- **Depth Control**: Configurable maximum depth for recursive crawling
-- **Polite Crawling**: Configurable delays between requests to be respectful to servers
-- **Concurrent Request Control**: Configurable maximum concurrent requests
-- **Redirect Protection**: Comprehensive protection against redirect loops (infinite, reverse, circular)
-- **Single Domain Crawling**: Only crawls URLs from the same domain as the base URL
-- **URL Validation**: Comprehensive validation of URLs before processing
-- **Relative URL Handling**: Converts relative URLs to absolute URLs
-- **Domain Filtering**: Automatically filters out external domains and subdomains
-- **Error Handling**: Robust error handling for network issues and invalid URLs
-
-### URL Verification System
-The web crawler includes a comprehensive URL verification system with multiple validation layers:
-
-#### 1. **Syntactic Checks**
-- Validates URL format and structure
-- Ensures proper HTTP/HTTPS schemes
-- Validates domain names and IP addresses
-- Checks port numbers (1-65535)
-- Validates path and query string characters
-- Prevents dangerous characters and injection attempts
-
-#### 2. **Semantic Checks**
-- DNS resolution validation
-- Reserved domain detection (.invalid, .example, .test, .localhost)
-- Private IP address filtering
-- Domain name format validation
-
-#### 3. **Protocol Checks**
-- HTTP status code validation (2xx, 3xx)
-- Content-Type verification for HTML pages
-- SSL certificate validation
-- Network connectivity testing
-
-#### 4. **Operational Checks**
-- robots.txt accessibility and compliance
-- Rate limiting detection (Retry-After headers)
-- Crawler blocking detection (403 Forbidden)
-- Captcha and blocking page detection
-
-#### 5. **Security Checks**
-- SSRF (Server-Side Request Forgery) protection
-- Local/internal service blocking
-- Dangerous protocol filtering (javascript:, data:, file:, etc.)
-- Input sanitization and validation
-
-
-
-### Output Format
-
-The tool provides detailed crawling progress and final results:
-
-#### Progress Output:
-```
-Starting asynchronous recursive crawl of https://example.com
-Domain: example.com
-Max depth: 2
-Delay between requests: 0.1s
-Max redirects per URL: 10
-Max concurrent requests: 10
---------------------------------------------------
-[Depth 0] Crawling: https://example.com
-  Redirect 1: https://example.com -> https://example.com/home
-[Depth 1] Crawling: https://example.com/about
-[Depth 1] Crawling: https://example.com/contact
-[Depth 2] Crawling: https://example.com/about/team
---------------------------------------------------
-Crawl completed!
-Total URLs found: 4
-Total URLs visited: 4
-
-All discovered URLs:
---------------------------------------------------
-https://example.com
-https://example.com/about
-https://example.com/about/team
-https://example.com/contact
-```
-
-### Programmatic Usage
-
-You can also use the crawler programmatically:
-
-```python
-from src.web_crawler import crawl, crawl_single_page
-
-# Recursive crawling with options
-crawl("https://example.com", max_depth=3, delay=0.1, max_redirects=10, max_concurrent=10)
-
-# Single page crawling (original behavior)
-crawl_single_page("https://example.com", max_redirects=10)
-```
 
 ## Project Structure
 
 ```
 web-crawler/
 ├── bin/
-│   └── web-crawler          # CLI executable
+│   └── web-crawler              # CLI executable
 ├── src/
-│   ├── web_crawler.py       # Main crawling logic
+│   ├── web_crawler.py           # Main crawling logic
 │   └── utils/
-│       └── verification_utils.py  # URL verification system
+│       ├── url_normalizer.py    # URL normalization
+│       ├── redirect_handler.py  # Redirect handling
+│       └── verification_utils.py # URL verification
 ├── test/
-│   ├── test_web_crawler.py  # Web crawler tests
+│   ├── test_web_crawler.py      # Web crawler tests
 │   └── utils/
-│       └── test_verification_utils.py  # Verification utils tests
-├── requirements.txt         # Python dependencies
-└── README.md               # This file
+│       └── test_verification_utils.py # Verification utils tests
+├── crawling_runs/               # Generated crawl reports
+│   └── YYYY-MM-DD_HH-MM-SS/     # Timestamped report folders
+├── requirements.txt             # Python dependencies
+└── README.md                    # This file
 ```
 
-## Performance Considerations
+## Output Examples
 
-- **Asynchronous Processing**: Concurrent HTTP requests for significantly improved performance
-- **Efficient Parsing**: Uses BeautifulSoup for fast HTML parsing
+### Console Output
+```
+INFO:web_crawler:Starting asynchronous recursive crawl of https://example.com
+INFO:web_crawler:Domain: example.com
+INFO:web_crawler:Delay between requests: 0.1s
+INFO:web_crawler:Max redirects per URL: 10
+INFO:web_crawler:Max concurrent requests: 10
+INFO:web_crawler:--------------------------------------------------
+INFO:web_crawler:Crawling: https://example.com
+INFO:web_crawler:  Redirect 1: https://example.com -> https://example.com/home
+INFO:web_crawler:--------------------------------------------------
+INFO:web_crawler:Crawl completed!
+INFO:web_crawler:Total URLs found: 4
+INFO:web_crawler:Total URLs visited: 4
+INFO:web_crawler:Errors encountered: 0
+INFO:web_crawler:Redirects followed: 1
+INFO:web_crawler:Crawl report created in: crawling_runs/2025-08-27_22-44-04
+```
+
+### Crawl Report Structure
+```
+crawling_runs/
+└── 2025-08-27_22-44-04/
+    ├── run_details.txt          # Crawl statistics and timing
+    ├── all_found_urls.txt       # All discovered URLs
+    ├── all_error_urls.txt       # Error URLs (empty if no errors)
+    └── all_redirect_urls.txt    # Redirect URLs (empty if no redirects)
+```
+
+## Performance Features
+
+- **Asynchronous Processing**: Concurrent HTTP requests for high performance
+- **URL Normalization**: Prevents duplicate crawling of equivalent URLs
+- **Efficient Parsing**: BeautifulSoup for fast HTML parsing
 - **Domain Filtering**: Early filtering to reduce processing overhead
-- **URL Deduplication**: Uses sets to avoid duplicate processing and infinite loops
-- **Breadth-First Crawling**: Uses deque for efficient URL queue management
-- **Visited URL Tracking**: Prevents redundant crawling of already visited URLs
-- **Concurrent Request Control**: Configurable semaphore limits to prevent overwhelming servers
-- **Redirect Loop Protection**: Prevents infinite redirect loops and wasted resources
-- **Configurable Delays**: Polite crawling with adjustable delays between requests
-- **Depth Control**: Prevents excessive crawling with configurable depth limits
-- **Timeout Handling**: Configurable timeouts to prevent hanging requests
-
-## Future Enhancements
-
-- **URL Storage**: Persistent storage of crawled URLs and crawl history
-- **Robots.txt Compliance**: Full robots.txt parsing and compliance
-- **Sitemap Support**: XML sitemap parsing for efficient discovery
-- **Crawl Statistics**: Detailed analytics and reporting
-- **Resume Capability**: Ability to resume interrupted crawls
-- **Custom Filters**: Advanced URL filtering and content analysis
-- **Export Formats**: Support for various output formats (JSON, CSV, XML)
-- **Rate Limiting**: Advanced rate limiting and backoff strategies
-- **Distributed Crawling**: Multi-process and distributed crawling capabilities
+- **Concurrent Control**: Configurable semaphore limits
+- **Redirect Protection**: Prevents infinite loops and wasted resources
+- **Error Tracking**: Comprehensive error monitoring and reporting
 
 ## Contributing
 
