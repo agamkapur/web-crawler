@@ -451,45 +451,9 @@ def crawl(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1,
         raise Exception(f"Error during recursive crawling: {e}")
 
 
-def crawl_single_page(base_url: str, max_redirects: int = 10) -> None:
-    """
-    Crawl a single webpage and extract all URLs found on it (non-recursive).
-    This is the original functionality preserved for backward compatibility.
-    
-    Args:
-        base_url: The URL of the webpage to crawl
-        max_redirects: Maximum number of redirects to follow
-        
-    Returns:
-        None: Prints all found URLs to stdout
-    """
-    try:
-        # Validate the base URL before making the request
-        if not verify(base_url):
-            raise Exception(f"Invalid base URL: {base_url}")
-        
-        # Use the new async crawler with depth 0
-        config = CrawlConfig(max_depth=0, max_redirects=max_redirects)
-        crawler = WebCrawler(config)
-        
-        async def run_single_crawl():
-            return await crawler.crawl(base_url)
-        
-        result = asyncio.run(run_single_crawl())
-        
-        # Print results in the expected format
-        print(base_url)
-        for url in sorted(result.urls):
-            if url != base_url:  # Don't print base URL twice
-                print(url)
-            
-    except Exception as e:
-        raise Exception(f"Error crawling {base_url}: {e}")
-
-
 # Export the main classes and functions
 __all__ = [
     'WebCrawler', 'CrawlConfig', 'CrawlResult', 'RedirectLoopError', 
-    'crawl', 'crawl_async', 'crawl_single_page'
+    'crawl', 'crawl_async'
 ]
 

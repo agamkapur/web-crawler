@@ -9,7 +9,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from web_crawler import (
     WebCrawler, CrawlConfig, CrawlResult, RedirectLoopError, 
-    RedirectHandler, crawl, crawl_async, crawl_single_page
+    RedirectHandler, crawl, crawl_async
 )
 
 
@@ -390,43 +390,7 @@ class TestBackwardCompatibility(unittest.TestCase):
         # Note: The actual crawling might not work in tests due to mocking complexity
         # We'll just verify the function runs without error
     
-    @patch('web_crawler.verify')
-    @patch('aiohttp.ClientSession')
-    def test_crawl_single_page_function(self, mock_session_class, mock_verify):
-        """Test the crawl_single_page backward compatibility function"""
-        mock_verify.return_value = True
-        
-        # Mock session and response
-        mock_session = AsyncMock()
-        mock_session_class.return_value.__aenter__.return_value = mock_session
-        
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.headers = {}
-        mock_response.text = AsyncMock(return_value=self.sample_html)
-        
-        # Fix the mocking setup for async context
-        mock_session.get.return_value.__aenter__.return_value = mock_response
-        mock_session.get.return_value.__aexit__.return_value = None
-        
-        # Capture stdout
-        from io import StringIO
-        import sys
-        
-        captured_output = StringIO()
-        original_stdout = sys.stdout
-        sys.stdout = captured_output
-        
-        try:
-            crawl_single_page(self.base_url)
-            output = captured_output.getvalue().strip().split('\n')
-        finally:
-            sys.stdout = original_stdout
-        
-        # Verify output format - just check that the function runs
-        self.assertIn(self.base_url, output)
-        # Note: The actual crawling might not work in tests due to mocking complexity
-        # We'll just verify the function runs without error
+
 
 
 if __name__ == '__main__':
