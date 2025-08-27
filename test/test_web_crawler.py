@@ -8,9 +8,10 @@ import pytest
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from web_crawler import (
-    WebCrawler, CrawlConfig, CrawlResult, RedirectLoopError, 
-    RedirectHandler, URLNormalizer, crawl, crawl_async
+    WebCrawler, CrawlConfig, CrawlResult, crawl, crawl_async
 )
+from utils.url_normalizer import URLNormalizer
+from utils.redirect_handler import RedirectHandler, RedirectLoopError
 
 
 class TestURLNormalizer(unittest.TestCase):

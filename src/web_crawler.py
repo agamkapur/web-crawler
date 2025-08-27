@@ -1,8 +1,10 @@
 import asyncio
 import aiohttp
-from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode
+from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from utils.verification_utils import verify
+from utils.url_normalizer import URLNormalizer
+from utils.redirect_handler import RedirectHandler, RedirectLoopError
 from collections import deque
 from typing import Set, List, Optional, Dict, Any
 import logging
@@ -13,9 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class RedirectLoopError(Exception):
-    """Exception raised when a redirect loop is detected."""
-    pass
+
 
 
 @dataclass
@@ -37,195 +37,10 @@ class CrawlResult:
     redirect_count: int
 
 
-class URLNormalizer:
-    """Handles URL normalization to ensure consistent URL handling."""
-    
-    @staticmethod
-    def normalize_url(url: str) -> str:
-        """
-        Normalize a URL to ensure consistent handling.
-        
-        This function:
-        - Removes trailing slashes from paths (except for root)
-        - Converts to lowercase scheme and hostname
-        - Removes default ports (80 for HTTP, 443 for HTTPS)
-        - Removes fragments (#section)
-        - Sorts query parameters
-        - Removes duplicate query parameters
-        
-        Args:
-            url: The URL to normalize
-            
-        Returns:
-            Normalized URL string
-        """
-        try:
-            # Parse the URL
-            parsed = urlparse(url)
-            
-            # Normalize scheme and netloc (lowercase)
-            scheme = parsed.scheme.lower()
-            netloc = parsed.netloc.lower()
-            
-            # Remove default ports
-            if netloc.endswith(':80') and scheme == 'http':
-                netloc = netloc[:-3]  # Remove ':80' from the end
-            elif netloc.endswith(':443') and scheme == 'https':
-                netloc = netloc[:-4]  # Remove ':443' from the end
-            
-            # Normalize path (remove trailing slash except for root)
-            path = parsed.path
-            if path != '/' and path.endswith('/'):
-                path = path.rstrip('/')
-            
-            # Remove fragments
-            fragment = ''
-            
-            # Normalize query parameters
-            if parsed.query:
-                # Parse query parameters
-                query_params = parse_qs(parsed.query, keep_blank_values=True)
-                
-                # Remove duplicate parameters (keep last occurrence)
-                normalized_params = {}
-                for key, values in query_params.items():
-                    if values:
-                        # Keep the last value for each parameter
-                        normalized_params[key] = [values[-1]]
-                    else:
-                        # Keep empty values as empty list
-                        normalized_params[key] = []
-                
-                # Sort parameters and encode
-                sorted_params = sorted(normalized_params.items())
-                query = urlencode(sorted_params, doseq=True)
-            else:
-                query = ''
-            
-            # Reconstruct the URL
-            normalized = urlunparse((scheme, netloc, path, parsed.params, query, fragment))
-            
-            return normalized
-            
-        except Exception as e:
-            # If normalization fails, return the original URL
-            logger.warning(f"Failed to normalize URL {url}: {e}")
-            return url
 
 
-class RedirectHandler:
-    """Handles redirect logic and loop detection."""
-    
-    @staticmethod
-    def detect_redirect_loop(redirect_chain: List[str], new_url: str, max_redirects: int = 10) -> tuple[bool, Optional[str], Optional[str]]:
-        """
-        Detect various types of redirect loops.
-        
-        Args:
-            redirect_chain: List of URLs in the current redirect chain
-            new_url: The new URL to check
-            max_redirects: Maximum number of redirects allowed
-            
-        Returns:
-            tuple: (is_loop, loop_type, loop_description)
-        """
-        if len(redirect_chain) >= max_redirects:
-            return True, "max_redirects", f"Maximum redirects ({max_redirects}) exceeded"
-        
-        # Check for reverse loop (A -> B -> A pattern)
-        if len(redirect_chain) >= 2:
-            if new_url == redirect_chain[-2]:
-                return True, "reverse", f"Reverse redirect loop: {redirect_chain[-1]} -> {new_url}"
-        
-        # Check for circular loop (A -> B -> C -> A pattern)
-        if len(redirect_chain) >= 3:
-            if new_url == redirect_chain[-3]:
-                return True, "circular", f"Circular redirect loop: {redirect_chain[-2]} -> {redirect_chain[-1]} -> {new_url}"
-        
-        # Check for longer circular patterns
-        if len(redirect_chain) >= 4:
-            for i in range(len(redirect_chain) - 3):
-                if new_url == redirect_chain[i]:
-                    return True, "circular", f"Circular redirect loop detected at position {i}"
-        
-        # Check for infinite loop (same URL appears multiple times)
-        if new_url in redirect_chain:
-            return True, "infinite", f"Infinite redirect loop detected: {new_url}"
-        
-        return False, None, None
 
-    async def follow_redirects(
-        self, 
-        session: aiohttp.ClientSession, 
-        url: str, 
-        config: CrawlConfig
-    ) -> tuple[str, List[str], Optional[tuple[aiohttp.ClientResponse, str]]]:
-        """
-        Follow redirects safely with loop detection.
-        
-        Args:
-            session: aiohttp client session
-            url: The URL to follow redirects for
-            config: Crawl configuration
-            
-        Returns:
-            tuple: (final_url, redirect_chain, response_data) where response_data is (response, content) or None
-            
-        Raises:
-            RedirectLoopError: If a redirect loop is detected
-        """
-        redirect_chain = [url]
-        current_url = url
-        
-        timeout_obj = aiohttp.ClientTimeout(total=config.timeout)
-        
-        for redirect_count in range(config.max_redirects):
-            try:
-                async with session.get(current_url, timeout=timeout_obj, allow_redirects=False) as response:
-                    # Check if we got a redirect response
-                    if response.status in [301, 302, 303, 307, 308]:
-                        # Get the redirect location
-                        redirect_url = response.headers.get('Location')
-                        if not redirect_url:
-                            # No Location header, read content and return current response
-                            try:
-                                content = await response.text()
-                                return current_url, redirect_chain, (response, content)
-                            except Exception as e:
-                                logger.warning(f"  Failed to read response content: {e}")
-                                return current_url, redirect_chain, None
-                        
-                        # Convert relative redirect URL to absolute
-                        redirect_url = urljoin(current_url, redirect_url)
-                        
-                        # Check for redirect loop
-                        is_loop, loop_type, loop_description = self.detect_redirect_loop(
-                            redirect_chain, redirect_url, config.max_redirects
-                        )
-                        if is_loop:
-                            raise RedirectLoopError(f"Redirect loop detected: {loop_description}")
-                        
-                        # Add to redirect chain and continue
-                        redirect_chain.append(redirect_url)
-                        current_url = redirect_url
-                        
-                        logger.info(f"  Redirect {redirect_count + 1}: {redirect_chain[-2]} -> {redirect_chain[-1]}")
-                        
-                    else:
-                        # No more redirects, read content and return the final URL
-                        try:
-                            content = await response.text()
-                            return current_url, redirect_chain, (response, content)
-                        except Exception as e:
-                            logger.warning(f"  Failed to read response content: {e}")
-                            return current_url, redirect_chain, None
-                        
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                # If we can't follow redirects, return what we have
-                return current_url, redirect_chain, None
-        
-        # If we've reached max redirects, raise an error
-        raise RedirectLoopError(f"Maximum redirects ({config.max_redirects}) exceeded")
+
 
 
 class WebCrawler:
