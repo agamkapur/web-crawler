@@ -3,25 +3,26 @@ import aiohttp
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from utils.verification_utils import verify
+from utils.url_normalizer import URLNormalizer
+from utils.redirect_handler import RedirectHandler, RedirectLoopError
 from collections import deque
 from typing import Set, List, Optional, Dict, Any
 import logging
 from dataclasses import dataclass
+import os
+import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class RedirectLoopError(Exception):
-    """Exception raised when a redirect loop is detected."""
-    pass
+
 
 
 @dataclass
 class CrawlConfig:
     """Configuration for web crawling."""
-    max_depth: Optional[int] = None
     delay: float = 0.1
     max_redirects: int = 10
     max_concurrent: int = 10
@@ -36,121 +37,16 @@ class CrawlResult:
     visited_count: int
     error_count: int
     redirect_count: int
+    start_time: datetime.datetime
+    end_time: datetime.datetime
+    error_urls: Set[str]
+    redirect_urls: Set[str]
 
 
-class RedirectHandler:
-    """Handles redirect logic and loop detection."""
-    
-    @staticmethod
-    def detect_redirect_loop(redirect_chain: List[str], new_url: str, max_redirects: int = 10) -> tuple[bool, Optional[str], Optional[str]]:
-        """
-        Detect various types of redirect loops.
-        
-        Args:
-            redirect_chain: List of URLs in the current redirect chain
-            new_url: The new URL to check
-            max_redirects: Maximum number of redirects allowed
-            
-        Returns:
-            tuple: (is_loop, loop_type, loop_description)
-        """
-        if len(redirect_chain) >= max_redirects:
-            return True, "max_redirects", f"Maximum redirects ({max_redirects}) exceeded"
-        
-        # Check for reverse loop (A -> B -> A pattern)
-        if len(redirect_chain) >= 2:
-            if new_url == redirect_chain[-2]:
-                return True, "reverse", f"Reverse redirect loop: {redirect_chain[-1]} -> {new_url}"
-        
-        # Check for circular loop (A -> B -> C -> A pattern)
-        if len(redirect_chain) >= 3:
-            if new_url == redirect_chain[-3]:
-                return True, "circular", f"Circular redirect loop: {redirect_chain[-2]} -> {redirect_chain[-1]} -> {new_url}"
-        
-        # Check for longer circular patterns
-        if len(redirect_chain) >= 4:
-            for i in range(len(redirect_chain) - 3):
-                if new_url == redirect_chain[i]:
-                    return True, "circular", f"Circular redirect loop detected at position {i}"
-        
-        # Check for infinite loop (same URL appears multiple times)
-        if new_url in redirect_chain:
-            return True, "infinite", f"Infinite redirect loop detected: {new_url}"
-        
-        return False, None, None
 
-    async def follow_redirects(
-        self, 
-        session: aiohttp.ClientSession, 
-        url: str, 
-        config: CrawlConfig
-    ) -> tuple[str, List[str], Optional[tuple[aiohttp.ClientResponse, str]]]:
-        """
-        Follow redirects safely with loop detection.
-        
-        Args:
-            session: aiohttp client session
-            url: The URL to follow redirects for
-            config: Crawl configuration
-            
-        Returns:
-            tuple: (final_url, redirect_chain, response_data) where response_data is (response, content) or None
-            
-        Raises:
-            RedirectLoopError: If a redirect loop is detected
-        """
-        redirect_chain = [url]
-        current_url = url
-        
-        timeout_obj = aiohttp.ClientTimeout(total=config.timeout)
-        
-        for redirect_count in range(config.max_redirects):
-            try:
-                async with session.get(current_url, timeout=timeout_obj, allow_redirects=False) as response:
-                    # Check if we got a redirect response
-                    if response.status in [301, 302, 303, 307, 308]:
-                        # Get the redirect location
-                        redirect_url = response.headers.get('Location')
-                        if not redirect_url:
-                            # No Location header, read content and return current response
-                            try:
-                                content = await response.text()
-                                return current_url, redirect_chain, (response, content)
-                            except Exception as e:
-                                logger.warning(f"  Failed to read response content: {e}")
-                                return current_url, redirect_chain, None
-                        
-                        # Convert relative redirect URL to absolute
-                        redirect_url = urljoin(current_url, redirect_url)
-                        
-                        # Check for redirect loop
-                        is_loop, loop_type, loop_description = self.detect_redirect_loop(
-                            redirect_chain, redirect_url, config.max_redirects
-                        )
-                        if is_loop:
-                            raise RedirectLoopError(f"Redirect loop detected: {loop_description}")
-                        
-                        # Add to redirect chain and continue
-                        redirect_chain.append(redirect_url)
-                        current_url = redirect_url
-                        
-                        logger.info(f"  Redirect {redirect_count + 1}: {redirect_chain[-2]} -> {redirect_chain[-1]}")
-                        
-                    else:
-                        # No more redirects, read content and return the final URL
-                        try:
-                            content = await response.text()
-                            return current_url, redirect_chain, (response, content)
-                        except Exception as e:
-                            logger.warning(f"  Failed to read response content: {e}")
-                            return current_url, redirect_chain, None
-                        
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                # If we can't follow redirects, return what we have
-                return current_url, redirect_chain, None
-        
-        # If we've reached max redirects, raise an error
-        raise RedirectLoopError(f"Maximum redirects ({config.max_redirects}) exceeded")
+
+
+
 
 
 class WebCrawler:
@@ -165,10 +61,13 @@ class WebCrawler:
         """
         self.config = config or CrawlConfig()
         self.redirect_handler = RedirectHandler()
+        self.url_normalizer = URLNormalizer()
         self.visited_urls: Set[str] = set()
         self.all_found_urls: Set[str] = set()
         self.error_count = 0
         self.redirect_count = 0
+        self.error_urls: Set[str] = set()
+        self.redirect_urls: Set[str] = set()
         
     def _get_headers(self) -> Dict[str, str]:
         """Get headers for HTTP requests."""
@@ -183,7 +82,6 @@ class WebCrawler:
         self, 
         session: aiohttp.ClientSession, 
         url: str, 
-        depth: int, 
         base_domain: str
     ) -> List[str]:
         """
@@ -192,7 +90,6 @@ class WebCrawler:
         Args:
             session: aiohttp client session
             url: The URL to crawl
-            depth: Current crawl depth
             base_domain: Base domain to restrict crawling to
             
         Returns:
@@ -201,7 +98,7 @@ class WebCrawler:
         discovered_urls = []
         
         try:
-            logger.info(f"[Depth {depth}] Crawling: {url}")
+            logger.info(f"Crawling: {url}")
             
             # Follow redirects safely
             try:
@@ -209,9 +106,11 @@ class WebCrawler:
                     session, url, self.config
                 )
                 
-                # Update redirect count
+                # Update redirect count and track redirect URLs
                 if len(redirect_chain) > 1:
                     self.redirect_count += 1
+                    # Add the original URL to redirect URLs set
+                    self.redirect_urls.add(url)
                 
                 # If we ended up at a different URL, check if it's in the same domain
                 if final_url != url:
@@ -232,6 +131,7 @@ class WebCrawler:
                 if response_data is None:
                     logger.warning(f"  Failed to get response for {url}")
                     self.error_count += 1
+                    self.error_urls.add(url)
                     return discovered_urls
                 
                 # Unpack response data
@@ -241,15 +141,18 @@ class WebCrawler:
                 if response.status >= 400:
                     logger.warning(f"  HTTP {response.status} error for {url}")
                     self.error_count += 1
+                    self.error_urls.add(url)
                     return discovered_urls
                 
             except RedirectLoopError as e:
                 logger.warning(f"  Redirect loop detected: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             except Exception as e:
                 logger.warning(f"  Failed to follow redirects: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             
             # Parse the HTML content
@@ -258,6 +161,7 @@ class WebCrawler:
             except Exception as e:
                 logger.warning(f"  Failed to parse HTML for {url}: {e}")
                 self.error_count += 1
+                self.error_urls.add(url)
                 return discovered_urls
             
             # Find all anchor tags with href attributes
@@ -270,16 +174,20 @@ class WebCrawler:
                 # Convert relative URLs to absolute URLs
                 absolute_url = urljoin(url, href)
                 
+                # Normalize the discovered URL
+                normalized_url = self.url_normalizer.normalize_url(absolute_url)
+                
                 # Only include URLs from the same domain and not already visited
-                if (urlparse(absolute_url).netloc == base_domain and
-                    absolute_url not in self.visited_urls):
-                    discovered_urls.append(absolute_url)
+                if (urlparse(normalized_url).netloc == base_domain and
+                    normalized_url not in self.visited_urls):
+                    discovered_urls.append(normalized_url)
             
             return discovered_urls
             
         except Exception as e:
             logger.error(f"Error crawling {url}: {e}")
             self.error_count += 1
+            self.error_urls.add(url)
             return discovered_urls
 
     async def crawl(self, base_url: str) -> CrawlResult:
@@ -300,18 +208,25 @@ class WebCrawler:
             if not verify(base_url):
                 raise Exception(f"Invalid base URL: {base_url}")
             
+            # Normalize the base URL
+            normalized_base_url = self.url_normalizer.normalize_url(base_url)
+            
+            # Record start time
+            start_time = datetime.datetime.now()
+            
             # Initialize tracking variables
             self.visited_urls.clear()
             self.all_found_urls.clear()
             self.error_count = 0
             self.redirect_count = 0
+            self.error_urls.clear()
+            self.redirect_urls.clear()
             
-            urls_to_visit = deque([(base_url, 0)])  # (url, depth)
-            base_domain = urlparse(base_url).netloc
+            urls_to_visit = deque([normalized_base_url])  # Just URLs, no depth tracking
+            base_domain = urlparse(normalized_base_url).netloc
             
             logger.info(f"Starting asynchronous recursive crawl of {base_url}")
             logger.info(f"Domain: {base_domain}")
-            logger.info(f"Max depth: {self.config.max_depth if self.config.max_depth else 'unlimited'}")
             logger.info(f"Delay between requests: {self.config.delay}s")
             logger.info(f"Max redirects per URL: {self.config.max_redirects}")
             logger.info(f"Max concurrent requests: {self.config.max_concurrent}")
@@ -323,41 +238,40 @@ class WebCrawler:
             headers = self._get_headers()
 
             async with aiohttp.ClientSession(headers=headers) as session:
-                async def crawl_with_semaphore(url: str, depth: int) -> List[str]:
+                async def crawl_with_semaphore(url: str) -> List[str]:
                     async with semaphore:
                         if self.config.delay > 0:
                             await asyncio.sleep(self.config.delay)
-                        return await self._crawl_single_url(session, url, depth, base_domain)
+                        return await self._crawl_single_url(session, url, base_domain)
                 
                 while urls_to_visit:
                     # Get current batch of URLs to process
                     current_batch = []
                     while urls_to_visit and len(current_batch) < self.config.max_concurrent:
-                        current_url, current_depth = urls_to_visit.popleft()
+                        current_url = urls_to_visit.popleft()
                         
                         # Skip if already visited
                         if current_url in self.visited_urls:
                             continue
                         
-                        # Check depth limit
-                        if self.config.max_depth is not None and current_depth > self.config.max_depth:
-                            continue
+                        # Normalize the URL
+                        normalized_url = self.url_normalizer.normalize_url(current_url)
                         
                         # Skip if not same domain
-                        if urlparse(current_url).netloc != base_domain:
+                        if urlparse(normalized_url).netloc != base_domain:
                             continue
                         
-                        current_batch.append((current_url, current_depth))
+                        current_batch.append(normalized_url)
                     
                     if not current_batch:
                         break
                     
                     # Process current batch concurrently
-                    tasks = [crawl_with_semaphore(url, depth) for url, depth in current_batch]
+                    tasks = [crawl_with_semaphore(url) for url in current_batch]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     
                     # Process results
-                    for i, (url, depth) in enumerate(current_batch):
+                    for i, url in enumerate(current_batch):
                         try:
                             # Add to visited set
                             self.visited_urls.add(url)
@@ -368,14 +282,16 @@ class WebCrawler:
                                 discovered_urls = results[i]
                                 for discovered_url in discovered_urls:
                                     if discovered_url not in self.visited_urls:
-                                        urls_to_visit.append((discovered_url, depth + 1))
+                                        urls_to_visit.append(discovered_url)
                             else:
                                 logger.error(f"Error processing {url}: {results[i]}")
                                 self.error_count += 1
+                                self.error_urls.add(url)
                                 
                         except Exception as e:
                             logger.error(f"Error processing results for {url}: {e}")
                             self.error_count += 1
+                            self.error_urls.add(url)
             
             # Print final results
             logger.info("-" * 50)
@@ -391,26 +307,91 @@ class WebCrawler:
             for url in sorted(self.all_found_urls):
                 print(url)
             
+            # Create crawl report
+            self._create_crawl_report(base_url, start_time, datetime.datetime.now())
+            
             return CrawlResult(
                 urls=self.all_found_urls,
                 visited_count=len(self.visited_urls),
                 error_count=self.error_count,
-                redirect_count=self.redirect_count
+                redirect_count=self.redirect_count,
+                start_time=start_time,
+                end_time=datetime.datetime.now(),
+                error_urls=self.error_urls,
+                redirect_urls=self.redirect_urls
             )
                 
         except Exception as e:
             raise Exception(f"Error during asynchronous recursive crawling: {e}")
 
+    def _create_crawl_report(self, base_url: str, start_time: datetime.datetime, end_time: datetime.datetime) -> None:
+        """
+        Create a detailed crawl report in a timestamped folder.
+        
+        Args:
+            base_url: The base URL that was crawled
+            start_time: When the crawl started
+            end_time: When the crawl ended
+        """
+        try:
+            # Create crawling_runs directory if it doesn't exist
+            runs_dir = "crawling_runs"
+            if not os.path.exists(runs_dir):
+                os.makedirs(runs_dir)
+            
+            # Create timestamped folder name
+            timestamp = start_time.strftime("%Y-%m-%d_%H-%M-%S")
+            run_folder = os.path.join(runs_dir, timestamp)
+            os.makedirs(run_folder, exist_ok=True)
+            
+            # Calculate total time taken
+            total_time = end_time - start_time
+            
+            # Create run_details.txt
+            run_details_path = os.path.join(run_folder, "run_details.txt")
+            with open(run_details_path, 'w') as f:
+                f.write(f"Base URL: {base_url}\n")
+                f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"End Time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Total Time: {total_time}\n")
+                f.write(f"URLs Found/Visited: {len(self.all_found_urls)}\n")
+                f.write(f"Error URLs: {len(self.error_urls)}\n")
+                f.write(f"Redirect URLs: {len(self.redirect_urls)}\n")
+                f.write(f"Total Errors: {self.error_count}\n")
+                f.write(f"Total Redirects: {self.redirect_count}\n")
+            
+            # Create all_found_urls.txt
+            found_urls_path = os.path.join(run_folder, "all_found_urls.txt")
+            with open(found_urls_path, 'w') as f:
+                for url in sorted(self.all_found_urls):
+                    f.write(f"{url}\n")
+            
+            # Create all_error_urls.txt
+            error_urls_path = os.path.join(run_folder, "all_error_urls.txt")
+            with open(error_urls_path, 'w') as f:
+                for url in sorted(self.error_urls):
+                    f.write(f"{url}\n")
+            
+            # Create all_redirect_urls.txt
+            redirect_urls_path = os.path.join(run_folder, "all_redirect_urls.txt")
+            with open(redirect_urls_path, 'w') as f:
+                for url in sorted(self.redirect_urls):
+                    f.write(f"{url}\n")
+            
+            logger.info(f"Crawl report created in: {run_folder}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create crawl report: {e}")
+
 
 # Backward compatibility functions
-async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1, 
+async def crawl_async(base_url: str, delay: float = 0.1, 
                      max_redirects: int = 10, max_concurrent: int = 10) -> Set[str]:
     """
     Backward compatibility function for async crawling.
     
     Args:
         base_url: The URL of the webpage to start crawling from
-        max_depth: Maximum depth for recursive crawling. None for unlimited.
         delay: Delay between requests in seconds
         max_redirects: Maximum number of redirects to follow per URL
         max_concurrent: Maximum number of concurrent requests
@@ -419,7 +400,6 @@ async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: flo
         Set of all discovered URLs
     """
     config = CrawlConfig(
-        max_depth=max_depth,
         delay=delay,
         max_redirects=max_redirects,
         max_concurrent=max_concurrent
@@ -430,14 +410,13 @@ async def crawl_async(base_url: str, max_depth: Optional[int] = None, delay: flo
     return result.urls
 
 
-def crawl(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1, 
+def crawl(base_url: str, delay: float = 0.1, 
           max_redirects: int = 10, max_concurrent: int = 10) -> None:
     """
     Backward compatibility function for synchronous crawling.
     
     Args:
         base_url: The URL of the webpage to start crawling from
-        max_depth: Maximum depth for recursive crawling. None for unlimited.
         delay: Delay between requests in seconds
         max_redirects: Maximum number of redirects to follow per URL
         max_concurrent: Maximum number of concurrent requests
@@ -446,50 +425,14 @@ def crawl(base_url: str, max_depth: Optional[int] = None, delay: float = 0.1,
         None: Prints all found URLs to stdout
     """
     try:
-        asyncio.run(crawl_async(base_url, max_depth, delay, max_redirects, max_concurrent))
+        asyncio.run(crawl_async(base_url, delay, max_redirects, max_concurrent))
     except Exception as e:
         raise Exception(f"Error during recursive crawling: {e}")
-
-
-def crawl_single_page(base_url: str, max_redirects: int = 10) -> None:
-    """
-    Crawl a single webpage and extract all URLs found on it (non-recursive).
-    This is the original functionality preserved for backward compatibility.
-    
-    Args:
-        base_url: The URL of the webpage to crawl
-        max_redirects: Maximum number of redirects to follow
-        
-    Returns:
-        None: Prints all found URLs to stdout
-    """
-    try:
-        # Validate the base URL before making the request
-        if not verify(base_url):
-            raise Exception(f"Invalid base URL: {base_url}")
-        
-        # Use the new async crawler with depth 0
-        config = CrawlConfig(max_depth=0, max_redirects=max_redirects)
-        crawler = WebCrawler(config)
-        
-        async def run_single_crawl():
-            return await crawler.crawl(base_url)
-        
-        result = asyncio.run(run_single_crawl())
-        
-        # Print results in the expected format
-        print(base_url)
-        for url in sorted(result.urls):
-            if url != base_url:  # Don't print base URL twice
-                print(url)
-            
-    except Exception as e:
-        raise Exception(f"Error crawling {base_url}: {e}")
 
 
 # Export the main classes and functions
 __all__ = [
     'WebCrawler', 'CrawlConfig', 'CrawlResult', 'RedirectLoopError', 
-    'crawl', 'crawl_async', 'crawl_single_page'
+    'crawl', 'crawl_async'
 ]
 
