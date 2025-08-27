@@ -1,6 +1,6 @@
 import asyncio
 import aiohttp
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse, parse_qs, urlencode
 from bs4 import BeautifulSoup
 from utils.verification_utils import verify
 from collections import deque
@@ -35,6 +35,82 @@ class CrawlResult:
     visited_count: int
     error_count: int
     redirect_count: int
+
+
+class URLNormalizer:
+    """Handles URL normalization to ensure consistent URL handling."""
+    
+    @staticmethod
+    def normalize_url(url: str) -> str:
+        """
+        Normalize a URL to ensure consistent handling.
+        
+        This function:
+        - Removes trailing slashes from paths (except for root)
+        - Converts to lowercase scheme and hostname
+        - Removes default ports (80 for HTTP, 443 for HTTPS)
+        - Removes fragments (#section)
+        - Sorts query parameters
+        - Removes duplicate query parameters
+        
+        Args:
+            url: The URL to normalize
+            
+        Returns:
+            Normalized URL string
+        """
+        try:
+            # Parse the URL
+            parsed = urlparse(url)
+            
+            # Normalize scheme and netloc (lowercase)
+            scheme = parsed.scheme.lower()
+            netloc = parsed.netloc.lower()
+            
+            # Remove default ports
+            if netloc.endswith(':80') and scheme == 'http':
+                netloc = netloc[:-3]  # Remove ':80' from the end
+            elif netloc.endswith(':443') and scheme == 'https':
+                netloc = netloc[:-4]  # Remove ':443' from the end
+            
+            # Normalize path (remove trailing slash except for root)
+            path = parsed.path
+            if path != '/' and path.endswith('/'):
+                path = path.rstrip('/')
+            
+            # Remove fragments
+            fragment = ''
+            
+            # Normalize query parameters
+            if parsed.query:
+                # Parse query parameters
+                query_params = parse_qs(parsed.query, keep_blank_values=True)
+                
+                # Remove duplicate parameters (keep last occurrence)
+                normalized_params = {}
+                for key, values in query_params.items():
+                    if values:
+                        # Keep the last value for each parameter
+                        normalized_params[key] = [values[-1]]
+                    else:
+                        # Keep empty values as empty list
+                        normalized_params[key] = []
+                
+                # Sort parameters and encode
+                sorted_params = sorted(normalized_params.items())
+                query = urlencode(sorted_params, doseq=True)
+            else:
+                query = ''
+            
+            # Reconstruct the URL
+            normalized = urlunparse((scheme, netloc, path, parsed.params, query, fragment))
+            
+            return normalized
+            
+        except Exception as e:
+            # If normalization fails, return the original URL
+            logger.warning(f"Failed to normalize URL {url}: {e}")
+            return url
 
 
 class RedirectHandler:
@@ -164,6 +240,7 @@ class WebCrawler:
         """
         self.config = config or CrawlConfig()
         self.redirect_handler = RedirectHandler()
+        self.url_normalizer = URLNormalizer()
         self.visited_urls: Set[str] = set()
         self.all_found_urls: Set[str] = set()
         self.error_count = 0
@@ -182,7 +259,6 @@ class WebCrawler:
         self, 
         session: aiohttp.ClientSession, 
         url: str, 
-        depth: int, 
         base_domain: str
     ) -> List[str]:
         """
@@ -191,7 +267,6 @@ class WebCrawler:
         Args:
             session: aiohttp client session
             url: The URL to crawl
-            depth: Current crawl depth
             base_domain: Base domain to restrict crawling to
             
         Returns:
@@ -200,7 +275,7 @@ class WebCrawler:
         discovered_urls = []
         
         try:
-            logger.info(f"[Depth {depth}] Crawling: {url}")
+            logger.info(f"Crawling: {url}")
             
             # Follow redirects safely
             try:
@@ -269,10 +344,13 @@ class WebCrawler:
                 # Convert relative URLs to absolute URLs
                 absolute_url = urljoin(url, href)
                 
+                # Normalize the discovered URL
+                normalized_url = self.url_normalizer.normalize_url(absolute_url)
+                
                 # Only include URLs from the same domain and not already visited
-                if (urlparse(absolute_url).netloc == base_domain and
-                    absolute_url not in self.visited_urls):
-                    discovered_urls.append(absolute_url)
+                if (urlparse(normalized_url).netloc == base_domain and
+                    normalized_url not in self.visited_urls):
+                    discovered_urls.append(normalized_url)
             
             return discovered_urls
             
@@ -299,18 +377,20 @@ class WebCrawler:
             if not verify(base_url):
                 raise Exception(f"Invalid base URL: {base_url}")
             
+            # Normalize the base URL
+            normalized_base_url = self.url_normalizer.normalize_url(base_url)
+            
             # Initialize tracking variables
             self.visited_urls.clear()
             self.all_found_urls.clear()
             self.error_count = 0
             self.redirect_count = 0
             
-            urls_to_visit = deque([(base_url, 0)])  # (url, depth)
-            base_domain = urlparse(base_url).netloc
+            urls_to_visit = deque([normalized_base_url])  # Just URLs, no depth tracking
+            base_domain = urlparse(normalized_base_url).netloc
             
             logger.info(f"Starting asynchronous recursive crawl of {base_url}")
             logger.info(f"Domain: {base_domain}")
-            logger.info(f"Max depth: unlimited")
             logger.info(f"Delay between requests: {self.config.delay}s")
             logger.info(f"Max redirects per URL: {self.config.max_redirects}")
             logger.info(f"Max concurrent requests: {self.config.max_concurrent}")
@@ -322,39 +402,40 @@ class WebCrawler:
             headers = self._get_headers()
 
             async with aiohttp.ClientSession(headers=headers) as session:
-                async def crawl_with_semaphore(url: str, depth: int) -> List[str]:
+                async def crawl_with_semaphore(url: str) -> List[str]:
                     async with semaphore:
                         if self.config.delay > 0:
                             await asyncio.sleep(self.config.delay)
-                        return await self._crawl_single_url(session, url, depth, base_domain)
+                        return await self._crawl_single_url(session, url, base_domain)
                 
                 while urls_to_visit:
                     # Get current batch of URLs to process
                     current_batch = []
                     while urls_to_visit and len(current_batch) < self.config.max_concurrent:
-                        current_url, current_depth = urls_to_visit.popleft()
+                        current_url = urls_to_visit.popleft()
                         
                         # Skip if already visited
                         if current_url in self.visited_urls:
                             continue
                         
-
+                        # Normalize the URL
+                        normalized_url = self.url_normalizer.normalize_url(current_url)
                         
                         # Skip if not same domain
-                        if urlparse(current_url).netloc != base_domain:
+                        if urlparse(normalized_url).netloc != base_domain:
                             continue
                         
-                        current_batch.append((current_url, current_depth))
+                        current_batch.append(normalized_url)
                     
                     if not current_batch:
                         break
                     
                     # Process current batch concurrently
-                    tasks = [crawl_with_semaphore(url, depth) for url, depth in current_batch]
+                    tasks = [crawl_with_semaphore(url) for url in current_batch]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     
                     # Process results
-                    for i, (url, depth) in enumerate(current_batch):
+                    for i, url in enumerate(current_batch):
                         try:
                             # Add to visited set
                             self.visited_urls.add(url)
@@ -365,7 +446,7 @@ class WebCrawler:
                                 discovered_urls = results[i]
                                 for discovered_url in discovered_urls:
                                     if discovered_url not in self.visited_urls:
-                                        urls_to_visit.append((discovered_url, depth + 1))
+                                        urls_to_visit.append(discovered_url)
                             else:
                                 logger.error(f"Error processing {url}: {results[i]}")
                                 self.error_count += 1
