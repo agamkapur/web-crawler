@@ -25,10 +25,10 @@ Designing and implementing a modern web crawler that is resilient and scalable i
 
 ### Benchmarking and Test Websites
 
-`https://crawler-test.com/`
-`https://demo.cyotek.com/`
-`https://london.craigslist.org/`
-`https://www.wikipedia.org/`
+1. `https://crawler-test.com/`
+2. `https://demo.cyotek.com/`
+3. `https://london.craigslist.org/`
+4. `https://www.wikipedia.org/`
 
 
 ## Notes on Using AI Tools for Development
