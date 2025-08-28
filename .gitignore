@@ -208,4 +208,7 @@ __marimo__/
 
 
 # Crawling runs
-crawling_runs/
+
+# Ignore everything in the folder but keep the folder
+crawling_runs/*
+!crawling_runs/.gitkeep
