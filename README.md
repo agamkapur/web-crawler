@@ -71,7 +71,7 @@ Designing and implementing a modern web crawler that is resilient and scalable i
 8. Finally, some housekeeping changes were made, such as - extracting utilities to their own locations, reorganising tests, modifying logging and output routing, updating .giitignore, adding PEP8 formatting.
 
 
-## Resources and Referemces Used for Development
+## Resources and References Used for Development
 
 1. [Designing a Web Crawler - HelloInterview](https://www.hellointerview.com/learn/system-design/problem-breakdowns/web-crawler)
 2. [Design A Web Crawler - ByteByteGo](http://bytebytego.com/courses/system-design-interview/design-a-web-crawler)
