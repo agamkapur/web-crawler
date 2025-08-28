@@ -2,6 +2,61 @@
 
 A modern, asynchronous web crawler with comprehensive URL sanitisation and normalization, redirect handling, and detailed crawl reporting. This web crawler takes a base URL as input and recursively discovers all URLs within the same domain, with advanced features for robust and efficient crawling.
 
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd web-crawler
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+### Command Line Interface
+
+```bash
+# Basic recursive crawl
+./bin/web-crawler https://example.com
+
+# Combine options
+./bin/web-crawler https://example.com --delay 1.5 --max-redirects 8 --max-concurrent 15
+```
+
+#### CLI Options:
+- `--delay`: Delay between requests in seconds (default: 0.1)
+- `--max-redirects`: Maximum redirects to follow per URL (default: 10)
+- `--max-concurrent`: Maximum concurrent requests (default: 10)
+- `--help, -h`: Show help message
+
+Running this command will generate a folder with the timestamp as the name in `./crawler_runs`. For example,
+
+```
+crawling_runs/
+└── 2025-08-27_22-44-04/
+    ├── run_details.txt          # Crawl statistics and timing
+    ├── all_found_urls.txt       # All discovered URLs
+    ├── all_error_urls.txt       # Error URLs (empty if no errors)
+    └── all_redirect_urls.txt    # Redirect URLs (empty if no redirects)
+```
+
+## Testing
+
+### Run All Tests
+```bash
+python3 -m pytest test/ -v
+```
+
+### Run Specific Test Suites
+```bash
+# All web crawler tests
+python3 -m pytest test/test_web_crawler.py -v
+```
+
 ## Problem Solving Approach
 
 Designing and implementing a modern web crawler that is resilient and scalable is both challenging and rewarding. This web crawler was developed using an incremental approach that involved robust unit testing and benchmarking at each stage. 
@@ -59,50 +114,6 @@ Designing and implementing a modern web crawler that is resilient and scalable i
 - **Unlimited Depth**: Recursively discovers all URLs without depth limitations
 - **Polite Crawling**: Configurable delays between requests to be respectful to servers
 
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd web-crawler
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-
-### Command Line Interface
-
-```bash
-# Basic recursive crawl
-./bin/web-crawler https://example.com
-
-# Combine options
-./bin/web-crawler https://example.com --delay 1.5 --max-redirects 8 --max-concurrent 15
-```
-
-#### CLI Options:
-- `--delay`: Delay between requests in seconds (default: 0.1)
-- `--max-redirects`: Maximum redirects to follow per URL (default: 10)
-- `--max-concurrent`: Maximum concurrent requests (default: 10)
-- `--help, -h`: Show help message
-
-## Testing
-
-### Run All Tests
-```bash
-python3 -m pytest test/ -v
-```
-
-### Run Specific Test Suites
-```bash
-# All web crawler tests
-python3 -m pytest test/test_web_crawler.py -v
-```
-
 ## Project Structure
 
 ```
@@ -125,12 +136,3 @@ web-crawler/
 └── README.md                    # This file
 ```
 
-### Crawl Report Structure
-```
-crawling_runs/
-└── 2025-08-27_22-44-04/
-    ├── run_details.txt          # Crawl statistics and timing
-    ├── all_found_urls.txt       # All discovered URLs
-    ├── all_error_urls.txt       # Error URLs (empty if no errors)
-    └── all_redirect_urls.txt    # Redirect URLs (empty if no redirects)
-```
